@@ -14,6 +14,7 @@ local state = {
     is_silent = false,
     volume_samples = {},
     last_update_time = 0,
+    speed_reset_timer = nil,
 }
 
 function setup_filters()
@@ -86,9 +87,7 @@ function toggle_enabled()
     opts.enabled = not opts.enabled
     if opts.enabled then
         setup_filters()
-        if mp.get_property_number("speed", 1.0) == 1.0 then
-            mp.set_property("speed", opts.playback_speed)
-        end
+        mp.set_property("speed", opts.playback_speed)
         mp.osd_message("AMPS: Enabled")
     else
         mp.commandv("af", "remove", "@amps")
@@ -105,13 +104,32 @@ mp.register_event("file-loaded", function()
     state.is_silent = false
     state.volume_samples = {}
     state.last_update_time = 0
-    if opts.enabled then setup_filters() end
+    if opts.enabled then 
+        setup_filters() 
+        mp.set_property("speed", opts.playback_speed)
+    end
 end)
 
 mp.add_key_binding("C", "toggle-amps", toggle_enabled)
 
 mp.observe_property("speed", "number", function(name, value)
-    if value and not state.is_silent and value ~= opts.silence_speed then
+    if not mp.get_property("path") then return end
+    
+    if state.speed_reset_timer then
+        state.speed_reset_timer:kill()
+        state.speed_reset_timer = nil
+    end
+
+    if not value or state.is_silent or value == opts.silence_speed then return end
+    
+    if math.abs(value - 1.0) < 0.001 and math.abs(opts.playback_speed - 1.0) > 0.001 then
+        state.speed_reset_timer = mp.add_timeout(5, function()
+            mp.set_property("speed", opts.playback_speed)
+            mp.osd_message("AMPS: Resetting speed to " .. opts.playback_speed .. "x")
+        end)
+    end
+
+    if math.abs(value - opts.playback_speed) > 0.001 then
         opts.playback_speed = value
     end
 end)
