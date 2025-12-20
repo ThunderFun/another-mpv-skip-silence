@@ -6,6 +6,7 @@ local opts = {
     silence_duration = 1.0,
     silence_speed = 2.5,
     playback_speed = 1.01,
+    snap_playback_speed = true,
     enabled = false,
     debug = false,
 }
@@ -122,6 +123,27 @@ mp.observe_property("speed", "number", function(name, value)
 
     if not value or state.is_silent or value == opts.silence_speed then return end
     
+    local new_value = value
+    -- Apply the 1.01 hack
+    if math.abs(value - 1.0) < 0.001 then
+        new_value = 1.01
+    elseif opts.snap_playback_speed and value > 1.01 then
+        -- Snap to 0.1 increments if it's slightly over (e.g., 1.26 -> 1.25, 1.51 -> 1.50)
+        -- We check if it ends in .x1 or similar. Actually simpler:
+        -- If user changed speed, and it's something like 1.26, 1.51, etc.
+        -- mpv often increments by 0.1 or 0.05. 
+        -- If it's a multiple of 0.05 + 0.01, we snap it.
+        local remainder = value % 0.05
+        if math.abs(remainder - 0.01) < 0.001 then
+            new_value = value - 0.01
+        end
+    end
+
+    if new_value ~= value then
+        mp.set_property("speed", new_value)
+        return -- The property observer will trigger again
+    end
+
     if math.abs(value - 1.0) < 0.001 and math.abs(opts.playback_speed - 1.0) > 0.001 then
         state.speed_reset_timer = mp.add_timeout(5, function()
             mp.set_property("speed", opts.playback_speed)
